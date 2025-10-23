@@ -11,37 +11,28 @@ import {
   Keyboard,
   Animated,
   Easing,
-  Platform,
   useColorScheme,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL } from '../config';
 
 export default function LoginScreen({ navigation }: { navigation: any }) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [secure, setSecure] = useState(true);
   const [fadeAnim] = useState(new Animated.Value(1));
   const [loading, setLoading] = useState(false);
 
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
   const toggleSecure = () => {
     Animated.sequence([
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 150,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 150,
-        easing: Easing.in(Easing.quad),
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim, { toValue: 0, duration: 150, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 150, easing: Easing.in(Easing.quad), useNativeDriver: true }),
     ]).start();
     setSecure((prev) => !prev);
   };
@@ -60,25 +51,29 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify({
-          email: username,
-          password,
-        }),
+        body: JSON.stringify({ email: username, password }),
       });
 
-      const data = await response.json();
+      // parse JSON dengan aman
+      let data: any = {};
+      try {
+        data = await response.json();
+      } catch (e) {
+        console.log('Response bukan JSON:', e);
+      }
 
-      if (response.ok) {
-        // simpan token di storage jika perlu
-        // navigation ke dashboard
-        Alert.alert('Sukses', 'Login berhasil');
+      const token = data.token || data.access_token;
+      if (response.ok && token) {
+        await SecureStore.setItemAsync('userToken', token);
         navigation.replace('Dashboard');
+      } else if (data.message) {
+        Alert.alert('Login gagal', data.message);
       } else {
-        Alert.alert('Login gagal', data.message || 'Email atau password salah');
+        Alert.alert('Error', 'Login gagal, coba lagi');
       }
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Tidak bisa koneksi ke server');
+      Alert.alert('Error', 'Tidak bisa terhubung ke server');
     } finally {
       setLoading(false);
     }
@@ -94,14 +89,10 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       >
         <View style={styles.inner}>
           <Image source={require('../../assets/icon.png')} style={styles.logo} />
-          <Text style={[styles.title, { color: isDark ? '#E5E7EB' : '#FFFFFF' }]}>
-            Expense Tracker
-          </Text>
+          <Text style={[styles.title, { color: isDark ? '#E5E7EB' : '#FFFFFF' }]}>Expense Tracker</Text>
 
           <View style={styles.inputContainer}>
-            <Text style={[styles.label, { color: isDark ? '#9CA3AF' : '#C7D2FE' }]}>
-              Email
-            </Text>
+            <Text style={[styles.label, { color: isDark ? '#9CA3AF' : '#C7D2FE' }]}>Email</Text>
             <TextInput
               style={[
                 styles.input,
@@ -120,9 +111,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
               returnKeyType="next"
             />
 
-            <Text style={[styles.label, { marginTop: 12, color: isDark ? '#9CA3AF' : '#C7D2FE' }]}>
-              Password
-            </Text>
+            <Text style={[styles.label, { marginTop: 12, color: isDark ? '#9CA3AF' : '#C7D2FE' }]}>Password</Text>
             <View style={styles.passwordWrapper}>
               <TextInput
                 style={[
@@ -144,11 +133,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
               />
               <TouchableOpacity onPress={toggleSecure} style={styles.iconButton}>
                 <Animated.View style={{ opacity: fadeAnim }}>
-                  <Ionicons
-                    name={secure ? 'eye-off-outline' : 'eye-outline'}
-                    size={22}
-                    color={isDark ? '#9CA3AF' : '#A5B4FC'}
-                  />
+                  <Ionicons name={secure ? 'eye-off-outline' : 'eye-outline'} size={22} color={isDark ? '#9CA3AF' : '#A5B4FC'} />
                 </Animated.View>
               </TouchableOpacity>
             </View>
@@ -158,6 +143,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
             style={[styles.button, (!username || !password) && styles.buttonDisabled]}
             onPress={handleLogin}
             activeOpacity={0.85}
+            disabled={loading}
           >
             <LinearGradient
               colors={isDark ? ['#4F46E5', '#6D28D9'] : ['#3B82F6', '#8B5CF6']}
@@ -169,9 +155,7 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
             </LinearGradient>
           </TouchableOpacity>
 
-          <Text style={[styles.footer, { color: isDark ? '#9CA3AF' : '#E0E7FF' }]}>
-            © 2025 Expense Mobile
-          </Text>
+          <Text style={[styles.footer, { color: isDark ? '#9CA3AF' : '#E0E7FF' }]}>© 2025 Expense Mobile</Text>
         </View>
       </LinearGradient>
     </TouchableWithoutFeedback>
@@ -185,7 +169,13 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '700', marginBottom: 26 },
   inputContainer: { width: '100%', marginBottom: 22 },
   label: { fontSize: 13, marginBottom: 6 },
-  input: { borderWidth: 1, borderRadius: 10, paddingVertical: Platform.OS === 'ios' ? 12 : 8, paddingHorizontal: 14, fontSize: 16 },
+  input: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    paddingHorizontal: 14,
+    fontSize: 16,
+  },
   passwordWrapper: { position: 'relative', justifyContent: 'center' },
   inputWithIcon: { paddingRight: 44 },
   iconButton: { position: 'absolute', right: 10, height: '100%', justifyContent: 'center', padding: 6 },
